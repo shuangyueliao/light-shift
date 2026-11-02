@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Light Shift — a glowing lights-out puzzle. Tap tiles to flip a cross of lights and switch off the whole grid. Free HTML5 game.">
+<title>Light Shift · Lights-Out Puzzle</title>
+<script>
+// 平台 SDK 按域名条件加载（独立运行时完全不加载，游戏行为不变）
+(function () {
+  var host = location.hostname || "";
+  try {
+    if (host.indexOf("crazygames") !== -1) {
+      var s1 = document.createElement("script");
+      s1.src = "https://sdk.crazygames.com/crazygames-sdk-v3.js";
+      s1.onload = function () {
+        if (window.CrazyGames && window.CrazyGames.SDK) {
+          window.CrazyGames.SDK.init().then(function () {
+            try { window.CrazyGames.SDK.game.loadingStart(); } catch (e) {}
+            window.addEventListener("load", function () { try { window.CrazyGames.SDK.game.loadingStop(); } catch (e) {} });
+          }).catch(function () {});
+        }
+      };
+      document.head.appendChild(s1);
+      window.__portal = "crazygames";
+    } else if (host.indexOf("gamedistribution") !== -1 || host.indexOf("html5.gamedistribution.com") !== -1 || host.indexOf("gd.games") !== -1) {
+      var s2 = document.createElement("script");
+      s2.src = "https://sdk.gamedistribution.com/v2/main.min.js";
+      document.head.appendChild(s2);
+      window.__portal = "gamedistribution";
+    }
+  } catch (e) {}
+})();
+</script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; background:#07070f; font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; }
+  #wrap { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; }
+  #hud { display:flex; justify-content:space-between; align-items:center; color:#e8f4ff; }
+  .stat { text-align:center; min-width:72px; }
+  .stat .label { font-size:10px; color:#5f6f8f; letter-spacing:2px; }
+  .stat .val { font-size:20px; font-weight:800; color:#cfe9ff; }
+  #title { font-size:14px; font-weight:800; letter-spacing:3px; color:#6ee7ff; text-shadow:0 0 12px rgba(110,231,255,.6); }
+  #ctrl { display:flex; gap:7px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  .pill { font-size:11px; color:#7f93b8; background:#101024; border:1px solid #232345; border-radius:999px; padding:4px 10px; letter-spacing:1px; white-space:nowrap; }
+  .btn { font-size:11px; font-weight:700; letter-spacing:1px; color:#cfe9ff; background:#141432; border:1px solid #2c2c58; border-radius:999px; padding:5px 12px; cursor:pointer; }
+  .btn:active { transform:scale(.95); }
+  canvas { display:block; border-radius:14px; touch-action:none; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(4,6,16,.8); backdrop-filter:blur(4px); z-index:5; border-radius:14px; }
+  #panel { background:#0e1226; border:1px solid #23305c; border-radius:18px; padding:22px 24px; text-align:center; color:#fff; width:min(88%,350px); box-shadow:0 0 40px rgba(80,140,255,.16); }
+  #panel h2 { font-size:21px; margin-bottom:8px; letter-spacing:1px; color:#eaf6ff; }
+  #panel p { color:#93a7c9; font-size:12.5px; line-height:1.55; margin-bottom:10px; }
+  #ovStars { font-size:26px; letter-spacing:6px; margin-bottom:4px; }
+  .stOn { color:#ffd76a; text-shadow:0 0 10px rgba(255,215,106,.7); }
+  .stOff { color:#2c3555; }
+  #ovStats { color:#7f93b8; font-size:11px; letter-spacing:1px; margin-bottom:14px; line-height:1.6; }
+  #ovBtns { display:flex; flex-direction:column; gap:9px; }
+  #ovBtns button { border:none; border-radius:12px; padding:11px 18px; font-size:14px; font-weight:800; cursor:pointer; letter-spacing:1px; }
+  #ovBtns .main { background:linear-gradient(135deg,#00c2ff,#7b5bff); color:#fff; box-shadow:0 0 18px rgba(0,180,255,.35); }
+  #ovBtns .ghost { background:#141432; color:#bcd6f5; border:1px solid #2c2c58; }
+  #ovBtns button:active { transform:scale(.97); }
+  #footer { color:#44506b; font-size:11px; padding:4px; letter-spacing:1px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="stat"><div class="label" id="levelLabel">LEVEL</div><div class="val" id="level">1</div></div>
+    <div id="title">LIGHT SHIFT</div>
+    <div class="stat"><div class="label">MOVES</div><div class="val" id="moves">0</div></div>
+  </div>
+  <div id="ctrl">
+    <span class="pill" id="parStat">PAR –</span>
+    <span class="pill" id="bestStat">BEST –</span>
+    <button class="btn" id="hintBtn">HINT 1</button>
+    <button class="btn" id="muteBtn">♪ ON</button>
+    <button class="btn" id="menuBtn">MENU</button>
+  </div>
+  <div style="position:relative">
+    <canvas id="game"></canvas>
+    <div id="overlay"><div id="panel">
+      <h2 id="ovTitle">LIGHT SHIFT</h2>
+      <p id="ovText"></p>
+      <div id="ovStars"></div>
+      <div id="ovStats"></div>
+      <div id="ovBtns"></div>
+    </div></div>
+  </div>
+  <div id="footer">Light Shift — a free puzzle game</div>
+</div>
+<script>
+"use strict";
+// ================= 常量与状态 =================
+var N = 5;                        // 5×5 光格阵
+var canvas = document.getElementById("game");
+var ctx = canvas.getContext("2d");
+var SIZE = 480;                   // canvas 逻辑边长（fit() 按视口自适应）
+var CELL = 90, OX = 15, OY = 15;  // 单格尺寸与盘面原点
+var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+var state = "MENU";               // MENU | PLAY | WON | LOST
+var mode = "level";               // level | endless
+var level = 1, round = 1;
+var limit = 5;                    // 关卡步数上限 = 4 + N（无限模式为 Infinity）
+var moves = 0, par = 0, hintsLeft = 1, stars = 0;
+var board = [];                   // 逻辑盘面：25 个 0/1（1 = 亮）
+var vis = [];                     // 视觉盘面（随波动延迟追逐逻辑盘面）
+var pending = {};                 // i -> {at, to} 待生效的视觉翻转
+var flashAt = [];                 // 胜利波浪闪光的起始时刻
+var effects = [];                 // 扩散圆环特效
+var hintCell = null;              // {r, c, until}
+var cursor = { r: 2, c: 2, active: false };
+var lastClick = null;
+var levelStart = 0;
+var NOW = 0;
+
+// 最佳成绩（全部 try/catch，隐私模式下静默降级）
+var highest = 0, endlessBest = 0, fastest = 0, fastestLevel = 0, muted = false;
+try { highest = parseInt(localStorage.getItem("ls_highest") || "0", 10) || 0; } catch (e) {}
+try { endlessBest = parseInt(localStorage.getItem("ls_endless") || "0", 10) || 0; } catch (e) {}
+try { fastest = parseFloat(localStorage.getItem("ls_fastest") || "0", 10) || 0; } catch (e) {}
+try { fastestLevel = parseInt(localStorage.getItem("ls_fastest_lvl") || "0", 10) || 0; } catch (e) {}
+try { muted = localStorage.getItem("ls_muted") === "1"; } catch (e) {}
+
+// ================= 纯逻辑（可独立单测） =================
+// 十字翻转：自身 + 上下左右
+function toggleAt(b, r, c) {
+  b[r * N + c] ^= 1;
+  if (r > 0) b[(r - 1) * N + c] ^= 1;
+  if (r < N - 1) b[(r + 1) * N + c] ^= 1;
+  if (c > 0) b[r * N + c - 1] ^= 1;
+  if (c < N - 1) b[r * N + c + 1] ^= 1;
+  return b;
+}
+function allOff(b) {
+  for (var i = 0; i < N * N; i++) if (b[i]) return false;
+  return true;
+}
+// 关卡生成：从全灭状态随机合法翻转 count 次（保证必有解且非空盘面）
+function shuffleBoard(count) {
+  var b, k;
+  do {
+    b = [];
+    for (var i = 0; i < N * N; i++) b[i] = 0;
+    for (k = 0; k < count; k++) toggleAt(b, (Math.random() * N) | 0, (Math.random() * N) | 0);
+  } while (allOff(b));
+  return b;
+}
+// 求解器：chase-the-lights，枚举首行 32 种按法逐行追灭，取最少步解
+function solveBoard(b) {
+  var best = null;
+  for (var mask = 0; mask < 32; mask++) {
+    var g = b.slice();
+    var clicks = [];
+    for (var c = 0; c < N; c++) if ((mask >> c) & 1) { toggleAt(g, 0, c); clicks.push([0, c]); }
+    for (var r = 0; r < N - 1; r++) for (var c2 = 0; c2 < N; c2++) {
+      if (g[r * N + c2]) { toggleAt(g, r + 1, c2); clicks.push([r + 1, c2]); }
+    }
+    var ok = true;
+    for (var i = (N - 1) * N; i < N * N; i++) if (g[i]) { ok = false; break; }
+    if (ok && (best === null || clicks.length < best.length)) best = clicks;
+  }
+  return best;
+}
+// 翻转音高：按格子坐标 (r+c) 映射五声音阶（C 大调宫商角徵羽，跨两个八度）
+function noteFreq(r, c) {
+  var SEMI = [0, 2, 4, 7, 9, 12, 14, 16, 19];
+  var idx = Math.min(r + c, SEMI.length - 1);
+  return 261.63 * Math.pow(2, SEMI[idx] / 12);
+}
+
+// ================= 音效（WebAudio 合成，无外部资源） =================
+var actx = null;
+function resumeAudio() {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+  } catch (e) {}
+}
+function beep(freq, dur, type, gainv, when) {
+  try {
+    if (muted) return;
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+    var t0 = actx.currentTime + (when || 0);
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(gainv || 0.1, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur);
+  } catch (e) {}
+}
+function winJingle() { // 五声音阶上行琶音
+  var NOTES = [0, 2, 4, 7, 9, 12];
+  for (var i = 0; i < NOTES.length; i++) beep(523.25 * Math.pow(2, NOTES[i] / 12), 0.22, "triangle", 0.1, i * 0.09);
+}
+function loseGroove() { beep(220, 0.3, "sawtooth", 0.06); beep(155, 0.45, "sawtooth", 0.06, 0.18); }
+function uiTick() { beep(660, 0.06, "sine", 0.05); }
+
+// ================= 平台埋点（域名守卫，仅在 crazygames 域生效） =================
+function startGameplay() {
+  try {
+    if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK) {
+      window.CrazyGames.SDK.game.gameplayStart();
+    }
+  } catch (e) {}
+}
+function stopGameplay(win) {
+  try {
+    if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK) {
+      window.CrazyGames.SDK.game.gameplayStop();
+      if (win) window.CrazyGames.SDK.game.happytime();
+    }
+  } catch (e) {}
+}
+
+// ================= 画布自适应 =================
+function fit() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var availW = Math.min(window.innerWidth - 20, 520);
+  var availH = window.innerHeight - 178; // 预留 HUD + 控件行 + 页脚
+  SIZE = Math.max(240, Math.min(availW, availH, 520));
+  CELL = (SIZE - 32) / N;           // 底部留 26px 提示条
+  OY = 6;
+  OX = (SIZE - CELL * N) / 2;
+  canvas.style.width = SIZE + "px";
+  canvas.style.height = SIZE + "px";
+  canvas.width = Math.round(SIZE * dpr);
+  canvas.height = Math.round(SIZE * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  document.getElementById("hud").style.width = SIZE + "px";
+  document.getElementById("ctrl").style.width = SIZE + "px";
+}
+window.addEventListener("resize", fit);
+
+// ================= 关卡流程 =================
+function newBoard(shuffleCount) {
+  board = shuffleBoard(shuffleCount);
+  var sol = solveBoard(board);
+  par = sol ? sol.length : 0;
+  moves = 0; hintsLeft = 1; stars = 0;
+  pending = {}; effects = []; hintCell = null; lastClick = null;
+  cursor.active = false;
+  for (var i = 0; i < N * N; i++) { vis[i] = board[i]; flashAt[i] = -1; }
+  levelStart = performance.now();
+  state = "PLAY";
+  updateHud();
+  hideOverlay();
+  startGameplay();
+}
+function startLevel(n) {
+  mode = "level"; level = n; limit = 4 + n;
+  newBoard(limit);
+}
+function startRound(r) {
+  mode = "endless"; round = r; limit = Infinity;
+  newBoard(Math.min(4 + r, 24));
+}
+function pressCell(r, c) {
+  if (state !== "PLAY") return;
+  flipWave(r, c);
+  moves++;
+  updateHud();
+  if (allOff(board)) { winBoard(); return; }
+  if (mode === "level" && moves >= limit) loseBoard();
+}
+// 点一格：逻辑立即十字翻转；视觉/音效按曼哈顿距离 30ms/格 波动传播
+function flipWave(r, c) {
+  lastClick = { r: r, c: c };
+  for (var rr = 0; rr < N; rr++) for (var cc = 0; cc < N; cc++) {
+    var d = Math.abs(rr - r) + Math.abs(cc - c);
+    if (d > 1) continue;
+    var i = rr * N + cc;
+    board[i] ^= 1;
+    pending[i] = { at: NOW + d * 0.03, to: board[i] };
+    beep(noteFreq(rr, cc), 0.16, "triangle", d === 0 ? 0.12 : 0.07, d * 0.03);
+  }
+  effects.push({ x: cellX(c), y: cellY(r), born: NOW, dur: 0.5, hue: 165 + (r + c) * 14, big: false });
+}
+function winBoard() {
+  state = "WON";
+  var elapsed = (performance.now() - levelStart) / 1000;
+  var win = false;
+  if (mode === "level") {
+    win = true;
+    stars = moves <= Math.ceil(limit / 2) ? 3 : (moves <= Math.ceil(limit * 0.75) ? 2 : 1);
+    if (level > highest) { highest = level; try { localStorage.setItem("ls_highest", String(highest)); } catch (e) {} }
+    if (!fastest || elapsed < fastest) {
+      fastest = elapsed; fastestLevel = level;
+      try { localStorage.setItem("ls_fastest", String(fastest)); } catch (e) {}
+      try { localStorage.setItem("ls_fastest_lvl", String(fastestLevel)); } catch (e) {}
+    }
+  } else {
+    win = true;
+    if (round > endlessBest) { endlessBest = round; try { localStorage.setItem("ls_endless", String(endlessBest)); } catch (e) {} }
+  }
+  stopGameplay(win);
+  celebrate();
+  winJingle();
+  updateHud();
+  setTimeout(showWinOverlay, 1000);
+}
+function loseBoard() {
+  state = "LOST";
+  stopGameplay(false);
+  loseGroove();
+  setTimeout(showLoseOverlay, 600);
+}
+// 胜利庆祝：整盘波浪闪光 + 扩散圆环
+function celebrate() {
+  var br = lastClick || { r: 2, c: 2 };
+  for (var r = 0; r < N; r++) for (var c = 0; c < N; c++) {
+    var d = Math.abs(r - br.r) + Math.abs(c - br.c);
+    flashAt[r * N + c] = NOW + d * 0.03;
+  }
+  effects.push({ x: cellX(br.c), y: cellY(br.r), born: NOW + 0.05, dur: 1.1, hue: 190, big: true });
+  effects.push({ x: cellX(br.c), y: cellY(br.r), born: NOW + 0.35, dur: 1.1, hue: 265, big: true });
+}
+// 提示道具：高亮当前盘面最优解中的一格，每关 1 次
+function useHint() {
+  if (state !== "PLAY" || hintsLeft <= 0) return;
+  var sol = solveBoard(board);
+  if (!sol || sol.length === 0) return;
+  hintsLeft--;
+  var pick = sol[(Math.random() * sol.length) | 0];
+  hintCell = { r: pick[0], c: pick[1], until: NOW + 2.6 };
+  updateHud();
+  beep(880, 0.12, "sine", 0.07);
+}
+function toggleMute() {
+  muted = !muted;
+  try { localStorage.setItem("ls_muted", muted ? "1" : "0"); } catch (e) {}
+  document.getElementById("muteBtn").textContent = muted ? "♪ OFF" : "♪ ON";
+  if (!muted) uiTick();
+}
+
+// ================= HUD 与浮层 =================
+function updateHud() {
+  document.getElementById("levelLabel").textContent = mode === "level" ? "LEVEL" : "ROUND";
+  document.getElementById("level").textContent = mode === "level" ? level : round;
+  document.getElementById("moves").textContent = mode === "level" ? Math.max(0, limit - moves) : moves;
+  document.getElementById("parStat").textContent = "PAR " + par;
+  document.getElementById("bestStat").textContent = mode === "level" ? "BEST L" + highest : "BEST R" + endlessBest;
+  var mv = document.getElementById("moves");
+  mv.textContent = mode === "level" ? Math.max(0, limit - moves) : moves;
+  mv.style.color = (mode === "level" && limit - moves <= 2) ? "#ffd76a" : "#cfe9ff"; // 步数告急变琥珀色
+  var hb = document.getElementById("hintBtn");
+  hb.textContent = "HINT " + hintsLeft;
+  hb.style.opacity = hintsLeft > 0 ? "1" : ".35";
+}
+var primaryFn = null;
+function showOverlay(title, text, starsN, stats, btns) {
+  document.getElementById("ovTitle").textContent = title;
+  document.getElementById("ovText").textContent = text;
+  var sh = "";
+  if (starsN !== null) for (var i = 0; i < 3; i++) sh += '<span class="' + (i < starsN ? "stOn" : "stOff") + '">★</span>';
+  document.getElementById("ovStars").innerHTML = sh;
+  document.getElementById("ovStars").style.display = starsN !== null ? "block" : "none";
+  document.getElementById("ovStats").textContent = stats || "";
+  var box = document.getElementById("ovBtns");
+  box.innerHTML = "";
+  primaryFn = null;
+  btns.forEach(function (b, idx) {
+    var el = document.createElement("button");
+    el.textContent = b.label;
+    el.className = b.primary ? "main" : "ghost";
+    el.addEventListener("click", function (e) { e.stopPropagation(); uiTick(); b.fn(); });
+    box.appendChild(el);
+    if (idx === 0) primaryFn = b.fn;
+  });
+  document.getElementById("overlay").style.display = "flex";
+}
+function hideOverlay() { document.getElementById("overlay").style.display = "none"; primaryFn = null; }
+function toMenu() {
+  state = "MENU";
+  stopGameplay(false);
+  var parts = [];
+  if (highest > 0) parts.push("BEST LEVEL L" + highest);
+  if (endlessBest > 0) parts.push("ENDLESS R" + endlessBest);
+  if (fastest > 0) parts.push("FASTEST " + fastest.toFixed(1) + "s (L" + fastestLevel + ")");
+  var btns = [{ label: "▶ PLAY LEVEL 1", primary: true, fn: function () { startLevel(1); } }];
+  if (highest > 1) btns.push({ label: "CONTINUE L" + highest, fn: function () { startLevel(highest); } });
+  btns.push({ label: "∞ ENDLESS MODE", fn: function () { startRound(1); } });
+  showOverlay("LIGHT SHIFT",
+    "Tap a tile to flip it with its four neighbours. Switch off every light to win.",
+    null, parts.join("  ·  ") || "No records yet — go turn off some lights!", btns);
+}
+function showWinOverlay() {
+  if (state !== "WON") return;
+  var diff = moves - par;
+  if (mode === "level") {
+    showOverlay("Level " + level + " Clear!",
+      "Solved in " + moves + " / " + limit + " moves · Par " + par + (diff === 0 ? " — perfect!" : " (" + (diff > 0 ? "+" : "") + diff + ")"),
+      stars, "BEST LEVEL L" + highest + "  ·  FASTEST " + fastest.toFixed(1) + "s",
+      [{ label: "NEXT LEVEL ▶", primary: true, fn: function () { startLevel(level + 1); } },
+       { label: "MENU", fn: toMenu }]);
+  } else {
+    showOverlay("Round " + round + " Clear!",
+      "Solved in " + moves + " moves · Par " + par + (diff === 0 ? " — perfect!" : " (" + (diff > 0 ? "+" : "") + diff + ")"),
+      null, "ENDLESS BEST R" + endlessBest,
+      [{ label: "NEXT ROUND ▶", primary: true, fn: function () { startRound(round + 1); } },
+       { label: "MENU", fn: toMenu }]);
+  }
+}
+function showLoseOverlay() {
+  if (state !== "LOST") return;
+  showOverlay("Out of Moves",
+    "Level " + level + " resists after " + limit + " moves. Par was " + par + " — chase the wave, not the sparks.",
+    null, "BEST LEVEL L" + highest,
+    [{ label: "RETRY LEVEL " + level, primary: true, fn: function () { startLevel(level); } },
+     { label: "MENU", fn: toMenu }]);
+}
+
+// ================= 渲染 =================
+function cellX(c) { return OX + c * CELL + CELL / 2; }
+function cellY(r) { return OY + r * CELL + CELL / 2; }
+function roundRect(g, x, y, w, h, rad) {
+  g.beginPath();
+  g.moveTo(x + rad, y);
+  g.arcTo(x + w, y, x + w, y + h, rad);
+  g.arcTo(x + w, y + h, x, y + h, rad);
+  g.arcTo(x, y + h, x, y, rad);
+  g.arcTo(x, y, x + w, y, rad);
+  g.closePath();
+}
+function drawCell(r, c) {
+  var i = r * N + c;
+  var x = OX + c * CELL, y = OY + r * CELL, pad = 5;
+  var hue = 165 + (r + c) * 14; // 青 → 紫 霓虹色带
+  if (vis[i]) {
+    var br = 0.5 + 0.5 * Math.sin(NOW * 2.4 + (r + c) * 0.8); // 呼吸辉光
+    ctx.save();
+    ctx.shadowColor = "hsla(" + hue + ",100%,60%,.9)";
+    ctx.shadowBlur = 9 + 9 * br;
+    ctx.fillStyle = "hsl(" + hue + ",90%," + (34 + 8 * br) + "%)";
+    roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 10);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = "hsla(" + hue + ",100%," + (70 + 14 * br) + "%,.92)";
+    roundRect(ctx, x + CELL * 0.29, y + CELL * 0.29, CELL * 0.42, CELL * 0.42, 7);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#101024";
+    roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 10);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(140,170,255,.09)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  var fs = flashAt[i]; // 胜利波浪闪光
+  if (fs >= 0) {
+    var k = (NOW - fs) / 0.6;
+    if (k >= 0 && k < 1) {
+      var a = Math.sin(k * Math.PI);
+      ctx.save();
+      ctx.shadowColor = "hsla(" + hue + ",100%,65%,.9)";
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = "hsla(" + hue + ",100%,72%," + (a * 0.85) + ")";
+      roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 10);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+function drawHint() {
+  if (!hintCell || NOW > hintCell.until) return;
+  var x = OX + hintCell.c * CELL, y = OY + hintCell.r * CELL;
+  var a = 0.55 + 0.45 * Math.sin(NOW * 7);
+  ctx.save();
+  ctx.shadowColor = "#ffd76a"; ctx.shadowBlur = 12;
+  ctx.strokeStyle = "rgba(255,215,106," + a + ")"; ctx.lineWidth = 3;
+  roundRect(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 10);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawEffects() {
+  for (var i = effects.length - 1; i >= 0; i--) {
+    var e = effects[i];
+    var k = (NOW - e.born) / e.dur;
+    if (k < 0) continue;
+    if (k >= 1) { effects.splice(i, 1); continue; }
+    var rad = CELL * (e.big ? 0.3 + k * 2.6 : 0.2 + k * 0.8);
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.strokeStyle = "hsl(" + e.hue + ",100%,65%)";
+    ctx.lineWidth = e.big ? 4 : 2.5;
+    ctx.shadowColor = "hsl(" + e.hue + ",100%,65%)"; ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawCursor() {
+  if (!cursor.active || state !== "PLAY") return;
+  var x = OX + cursor.c * CELL, y = OY + cursor.r * CELL;
+  ctx.strokeStyle = "rgba(255,255,255,.55)";
+  ctx.lineWidth = 2;
+  roundRect(ctx, x + 2, y + 2, CELL - 4, CELL - 4, 11);
+  ctx.stroke();
+}
+function draw() {
+  var bg = ctx.createLinearGradient(0, 0, 0, SIZE);
+  bg.addColorStop(0, "#0b0d20"); bg.addColorStop(1, "#07070f");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.fillStyle = "rgba(120,160,255,.045)";
+  roundRect(ctx, OX - 8, OY - 8, CELL * N + 16, CELL * N + 16, 16);
+  ctx.fill();
+  for (var i = 0; i < N * N; i++) { // 处理到期的波动翻转
+    var p = pending[i];
+    if (p && NOW >= p.at) { vis[i] = p.to; delete pending[i]; }
+  }
+  for (var r = 0; r < N; r++) for (var c = 0; c < N; c++) drawCell(r, c);
+  drawHint();
+  drawCursor();
+  drawEffects();
+  // 首局引导（只在本模式第一盘、未落子时显示）
+  if (state === "PLAY" && moves === 0 && (mode === "level" ? level === 1 : round === 1)) {
+    ctx.fillStyle = "rgba(170,200,235,.6)";
+    ctx.font = "600 11px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Tap a tile — it flips with its neighbours. Kill every light.", SIZE / 2, SIZE - 10);
+  }
+}
+var last = 0;
+function frame(t) {
+  NOW = t / 1000;
+  var dt = Math.min((t - last) / 1000, 0.05); last = t;
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// ================= 输入（触控 + 鼠标 + 键盘） =================
+function cellFromPoint(clientX, clientY) {
+  var rect = canvas.getBoundingClientRect();
+  var x = (clientX - rect.left) / rect.width * SIZE;
+  var y = (clientY - rect.top) / rect.height * SIZE;
+  var c = Math.floor((x - OX) / CELL), r = Math.floor((y - OY) / CELL);
+  if (r < 0 || r >= N || c < 0 || c >= N) return null;
+  return { r: r, c: c };
+}
+canvas.addEventListener("mousedown", function (e) {
+  resumeAudio();
+  var p = cellFromPoint(e.clientX, e.clientY);
+  if (p) pressCell(p.r, p.c);
+});
+canvas.addEventListener("touchstart", function (e) {
+  e.preventDefault();
+  resumeAudio();
+  var t = e.touches[0];
+  var p = cellFromPoint(t.clientX, t.clientY);
+  if (p) pressCell(p.r, p.c);
+}, { passive: false });
+canvas.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+document.addEventListener("keydown", function (e) {
+  resumeAudio();
+  var k = e.key;
+  if (state === "PLAY") {
+    if (k === "ArrowUp" || k === "ArrowDown" || k === "ArrowLeft" || k === "ArrowRight") {
+      e.preventDefault();
+      if (!cursor.active) { cursor.active = true; cursor.r = 2; cursor.c = 2; return; }
+      if (k === "ArrowUp") cursor.r = Math.max(0, cursor.r - 1);
+      if (k === "ArrowDown") cursor.r = Math.min(N - 1, cursor.r + 1);
+      if (k === "ArrowLeft") cursor.c = Math.max(0, cursor.c - 1);
+      if (k === "ArrowRight") cursor.c = Math.min(N - 1, cursor.c + 1);
+      beep(500, 0.03, "sine", 0.03);
+    } else if (k === " " || k === "Enter") {
+      e.preventDefault();
+      if (!cursor.active) { cursor.active = true; cursor.r = 2; cursor.c = 2; }
+      else pressCell(cursor.r, cursor.c);
+    } else if (k === "h" || k === "H") {
+      useHint();
+    } else if (k === "m" || k === "M") {
+      toggleMute();
+    } else if (k === "r" || k === "R") { // 重开当前盘（重新洗牌）
+      if (mode === "level") startLevel(level); else startRound(round);
+    }
+  } else if ((k === "Enter" || k === " ") && primaryFn) {
+    e.preventDefault();
+    uiTick(); primaryFn();
+  }
+});
+document.getElementById("hintBtn").addEventListener("click", function (e) { e.stopPropagation(); resumeAudio(); useHint(); });
+document.getElementById("muteBtn").addEventListener("click", function (e) { e.stopPropagation(); resumeAudio(); toggleMute(); });
+document.getElementById("menuBtn").addEventListener("click", function (e) { e.stopPropagation(); uiTick(); toMenu(); });
+
+// ================= 启动 =================
+fit();
+for (var bi = 0; bi < N * N; bi++) { vis[bi] = 0; flashAt[bi] = -1; }
+document.getElementById("muteBtn").textContent = muted ? "♪ OFF" : "♪ ON";
+updateHud();
+toMenu();
+requestAnimationFrame(frame);
+// 调试/测试钩子（不影响游戏逻辑）
+window.__ls = {
+  get board() { return board; },
+  get state() { return state; },
+  get moves() { return moves; },
+  get par() { return par; },
+  pressCell: pressCell,
+  solveBoard: solveBoard,
+  shuffleBoard: shuffleBoard
+};
+</script>
+</body>
+</html>
